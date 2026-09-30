@@ -81,6 +81,18 @@ reordering, inserting, and removing items touches the **minimum** number of DOM
 nodes. This is mandatory-friendly best practice and, later, keeps a per-frame
 game loop cheap.
 
+**The contract, precisely:**
+
+- Siblings with a `key` are diffed **by key**. Reorder/insert/remove preserves
+  node identity (focus, caret, input value, handler closures stay put).
+- Siblings without a `key` are diffed **by position**. Inserting or removing in
+  the middle of an unkeyed list therefore *shifts node identity* — the rendered
+  output stays correct, but a focused input or reused node can jump.
+- Either all siblings should be keyed or all left unkeyed. **Mixing** them, or
+  using **duplicate** keys, triggers a one-time developer warning
+  (`console.warn`, prefixed `[mini-framework]`). Warnings are silenced when
+  `globalThis.__MINI_DEV__ === false`.
+
 ---
 
 ## Lifecycle hooks
@@ -96,6 +108,11 @@ h("div", {
 ```
 
 Hooks are never written to the DOM as attributes.
+
+When a subtree is removed — a node removed from a list, or a node replaced
+because its `tag` changed — `onUnmount` fires for **every node in that subtree,
+children before parents** (post-order). Use it to release anything a subtree
+owns (timers, subscriptions, attention).
 
 ---
 

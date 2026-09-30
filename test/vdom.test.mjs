@@ -79,5 +79,69 @@ patch(btnEl, btn1, btn2);
 btnEl.click();
 assert(clicked === 11, "event handler replaced on patch");
 
+// 7. tag change replaces the node and fires onUnmount
+let unmounted7 = 0;
+const old7 = h("div", { onUnmount: () => unmounted7++ }, h("span", {}, "x"));
+const holder7 = document.body;
+const dom7 = mount(old7);
+holder7.appendChild(dom7);
+const after7 = patch(dom7, old7, h("section", {}, "y"));
+assert(after7.tagName === "SECTION", "tag change mounts the new node");
+assert(holder7.lastChild === after7, "tag change replaces in place");
+assert(unmounted7 === 1, "tag change fires onUnmount");
+holder7.removeChild(after7);
+
+// 8. unmount propagates through the whole replaced subtree, post-order
+const order = [];
+const child8 = h("span", { onUnmount: () => order.push("child") }, "c");
+const old8 = h("div", { onUnmount: () => order.push("parent") }, child8);
+const holder8 = document.body;
+const dom8 = mount(old8);
+holder8.appendChild(dom8);
+patch(dom8, old8, h("section", {}, "new"));
+assert(order.join(",") === "child,parent", "unmount is post-order: " + order.join(","));
+holder8.removeChild(holder8.lastChild);
+
+// 9. removing a list item unmounts its descendants too
+const removed9 = [];
+const old9 = h("ul", {},
+  h("li", { key: "a" }, "A"),
+  h("li", { key: "b" }, h("em", { onUnmount: () => removed9.push("em") }, "B")),
+);
+const ul9 = mount(old9);
+patch(ul9, old9, h("ul", {}, h("li", { key: "a" }, "A")));
+assert(removed9.join(",") === "em", "removed subtree fires descendant onUnmount");
+assert(ul9.children.length === 1, "removed item is gone");
+
+// 10. dev warning: mixing keyed and unkeyed siblings
+let warns = [];
+const origWarn = console.warn;
+console.warn = (...a) => warns.push(a.join(" "));
+const old10 = h("ul", {}, h("li", {}, "a"), h("li", {}, "b"));
+const ul10 = mount(old10);
+patch(ul10, old10, h("ul", {}, h("li", { key: "a" }, "a"), h("li", {}, "b")));
+console.warn = origWarn;
+assert(warns.some((w) => w.includes("mix of keyed and unkeyed")), "warns on mixed keys");
+assert(warns.some((w) => w.includes("mini-framework")), "warning carries a prefix");
+
+// 11. dev warning: duplicate keys
+warns = [];
+console.warn = (...a) => warns.push(a.join(" "));
+const old11 = h("ul", {}, h("li", { key: "x" }, "1"));
+const ul11 = mount(old11);
+patch(ul11, old11, h("ul", {}, h("li", { key: "x" }, "1"), h("li", { key: "x" }, "2")));
+console.warn = origWarn;
+assert(warns.some((w) => w.includes("duplicate key")), "warns on duplicate keys");
+
+// 12. no warning when every sibling is keyed (or every sibling is unkeyed)
+warns = [];
+console.warn = (...a) => warns.push(a.join(" "));
+const old12 = h("ul", {}, h("li", { key: "a" }, "A"));
+const ul12 = mount(old12);
+patch(ul12, old12, h("ul", {}, h("li", { key: "b" }, "B")));
+patch(ul12, h("ul", {}, h("li", { key: "b" }, "B")), h("ul", {}, h("li", {}, "C")));
+console.warn = origWarn;
+assert(warns.length === 0, "no warning for a consistent list");
+
 console.log(failures === 0 ? "\nALL PASS" : `\n${failures} FAILURES`);
 process.exit(failures === 0 ? 0 : 1);

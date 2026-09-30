@@ -58,6 +58,9 @@ unsubscribe();
 The listener receives `{ state, action }`. This is how views re-render: in the
 todoMVC example, `store.subscribe(draw)` re-runs the renderer on every change.
 
+If a listener throws, the error is reported through `setErrorHandler` and the
+remaining listeners still run — one broken subscriber cannot freeze the app.
+
 ---
 
 ## Multiple slices — `combineReducers`

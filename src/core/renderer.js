@@ -34,11 +34,21 @@ export function createRenderer(container) {
   return { render };
 }
 
-// Convenience singleton renderer for single-root apps.
-const defaultRenderer = createRenderer(typeof document !== "undefined" ? document.body : null);
+// Convenience singleton renderer for single-root apps, created lazily on the
+// first `render()` call so importing the framework does not assume a DOM.
+
+let defaultRenderer = null;
+
+function getDefaultRenderer() {
+  if (!defaultRenderer) {
+    defaultRenderer = createRenderer(document.body);
+  }
+  return defaultRenderer;
+}
 
 /**
- * Reconcile `newVnode` onto the default root (document.body).
+ * Reconcile `vnode` onto an explicit container, using a throwaway renderer
+ * (i.e. a fresh mount, not a diff against a previous tree).
  */
 export function mountTo(container, vnode) {
   const r = createRenderer(container);
@@ -49,5 +59,5 @@ export function mountTo(container, vnode) {
  * Reconcile `newVnode` onto the default root (document.body).
  */
 export function render(newVnode) {
-  return defaultRenderer.render(newVnode);
+  return getDefaultRenderer().render(newVnode);
 }

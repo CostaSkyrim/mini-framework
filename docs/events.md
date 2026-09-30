@@ -24,7 +24,8 @@ h("button", {
 Any standard DOM event type works (`click`, `input`, `keydown`, `submit`, …).
 The framework adds and removes these listeners automatically as nodes mount,
 update, and unmount — you never have to manage them by hand, and re-rendering
-will not duplicate or leak handlers.
+will not duplicate or leak handlers. (Internally these are **direct** listeners
+on each node; delegation via `delegate()` is a separate, optional utility.)
 
 ### Reacting to every keystroke
 
@@ -70,7 +71,13 @@ const off = delegate(document.body, "click", ".item", (e, target) => {
 ```
 
 Delegation keeps one predictable event path — important later for routing all
-keyboard/controller input through a single place.
+keyboard/controller input through a single place. It is independent of the
+`events` map on vnodes and of the renderer; use it when you have a stable root
+and many interchangeable descendants.
+
+A throwing handler never stops the others: `emit()` and the store both report
+the error (see `setErrorHandler`) and continue notifying the remaining
+subscribers.
 
 ---
 

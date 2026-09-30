@@ -3,7 +3,7 @@
 // This is the composition root: it demonstrates how the framework's pieces
 // (store + router + renderer) cooperate to build an app.
 
-import { createRenderer, useRouter, onRouteChange } from "../../src/index.js";
+import { createRenderer, useRouter } from "../../src/index.js";
 import { createTodoStore, filterFor, newId } from "./store.js";
 import { view } from "./view.js";
 
@@ -18,34 +18,42 @@ const app = {
   state: store.getState(),
   dispatch: (a) => store.dispatch(a),
   newId,
-  navigate: (p) => { window.location.hash = "#" + p; },
   currentFilter: "all",
+  navigate: () => {}, // replaced once the router exists (below)
 };
 
-function currentFilterFromHash() {
-  const h = window.location.hash;
-  if (h === "#/active") return "active";
-  if (h === "#/completed") return "completed";
+function filterFromPath(path) {
+  if (path === "/active") return "active";
+  if (path === "/completed") return "completed";
   return "all";
 }
 
 function draw() {
   app.state = store.getState();
-  app.currentFilter = currentFilterFromHash();
-  const filter = filterFor(app.currentFilter);
-  render(view(app, filter));
+  render(view(app, filterFor(app.currentFilter)));
 }
 
 // Re-render on every state change.
 store.subscribe(draw);
 
-// React to URL changes.
-onRouteChange(draw);
+// The links in index.html are hash-shaped (`#/active`), so drive the router in
+// hash mode to keep links, deep links, and programmatic navigation consistent.
+const router = useRouter(
+  [
+    { path: "/", view },
+    { path: "/active", view },
+    { path: "/completed", view },
+  ],
+  { hash: true },
+);
 
-useRouter([
-  { path: "/", view },
-  { path: "/active", view },
-  { path: "/completed", view },
-]);
+app.navigate = (path) => router.navigate(path);
 
+// React to URL changes by re-deriving the filter from the resolved path.
+router.onRouteChange(({ path }) => {
+  app.currentFilter = filterFromPath(path);
+  draw();
+});
+
+// Paint the initial route.
 draw();

@@ -7,8 +7,9 @@
 /**
  * Create a virtual node.
  *
- * @param {string|Function} tag  Tag name ("div"), or a component function that
- *                               returns a vnode.
+ * @param {string} tag           Tag name ("div", "span", …). Only element and
+ *                               text ("#text") vnodes are supported by the
+ *                               renderer; function components are not.
  * @param {object} [props]       Attributes AND events for the node. The special
  *                               `events` key holds the event map (see emitter).
  * @param {Array} [children]     Child vnodes. Strings/numbers are normalized to

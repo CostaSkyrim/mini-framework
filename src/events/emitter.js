@@ -13,8 +13,11 @@
 //     named game actions (`move:left`, `bomb:place`) which game classes
 //     subscribe to. Netcode can later *replay* those same events frame-by-frame
 //     without touching the DOM.
-//   - Delegation: the renderer can attach/detach handlers safely through one
-//     registry, giving us lifecycle control we don't get from raw listeners.
+//   - Delegation: `delegate()` gives you one listener per root/type that routes
+//     events to matching descendants, with lifecycle control we don't get from
+//     raw listeners. (The vDOM renderer manages its own listeners separately.)
+
+import { reportError } from "../diagnostics.js";
 
 // Global event bus (publish/subscribe).
 const bus = new Map(); // eventName -> Set<handler>
@@ -90,7 +93,15 @@ export function delegate(root, type, selector, handler) {
 export function emit(eventName, payload) {
   const handlers = bus.get(eventName);
   if (!handlers) return;
-  for (const fn of handlers) fn(payload);
+  // Snapshot so subscribers that (un)subscribe mid-emit don't disturb the
+  // iteration; a throwing handler is reported and doesn't stop the rest.
+  for (const fn of [...handlers]) {
+    try {
+      fn(payload);
+    } catch (err) {
+      reportError(err, `event "${eventName}"`);
+    }
+  }
 }
 
 /**

@@ -134,5 +134,6 @@ This is exactly the shape the framework renders, with two extra reserved keys:
 npm test
 ```
 
-The suite covers virtual-DOM reconciliation (mount/patch/keyed lists/events) and
-a full integration test of todoMVC using jsdom.
+The suite covers virtual-DOM reconciliation (mount/patch/keyed lists/events/
+unmount hooks), the emitter, the store, the router, and a full integration test
+of todoMVC using jsdom.

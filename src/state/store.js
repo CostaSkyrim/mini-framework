@@ -15,6 +15,8 @@
 //     UI) re-reads the same truth on each tick. Snapshots are trivially
 //     serializable, which is exactly what frame-sync / rollback requires.
 
+import { reportError } from "../diagnostics.js";
+
 /**
  * Create a store.
  *
@@ -34,8 +36,15 @@ export function createStore(reducer, initialState = undefined) {
     const next = reducer(state, action);
     if (next === state) return state;
     state = next;
-    for (const fn of listeners) {
-      fn({ state, action });
+    // Iterate over a snapshot so a subscriber that (un)subscribes mid-dispatch
+    // cannot skip or repeat others. A throwing subscriber is reported and does
+    // not stop the rest.
+    for (const fn of [...listeners]) {
+      try {
+        fn({ state, action });
+      } catch (err) {
+        reportError(err, "store subscriber");
+      }
     }
     return state;
   }

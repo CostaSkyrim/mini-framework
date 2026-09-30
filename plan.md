@@ -63,10 +63,10 @@ mini-framework/
 - Routes map paths to render functions that read from the store.
 - TodoMVC uses `/` (all), `/#/active`, `/#/completed`.
 
-### Event Handling — Delegated custom events (not `addEventListener`)
-- A central **event emitter + delegation** system: events are declared in the vnode (`events: { click: handler }`) and handled via a single root listener.
-- Exposes `on(target, type, handler)` — a syntax distinct from `addEventListener`.
-- **Future-proofing (critical for Bomberman):** this same emitter drives a **global input bus** — keyboard/controller events get normalized into named events (`move:left`, `bomb:place`), which the game classes subscribe to. Frame-synced input buffering later wraps this cleanly.
+### Event Handling — custom events (not `addEventListener`)
+- Events are declared in the vnode (`events: { click: handler }`) and attached as **direct listeners** tracked in a per-node registry, so re-renders replace handlers without leaking or duplicating them.
+- The emitter module additionally exposes `on(target, type, handler)` (a syntax distinct from `addEventListener`), `delegate(root, type, selector, handler)` (one root listener routing to matching descendants), and a global `emit`/`subscribe` bus.
+- **Future-proofing (critical for Bomberman):** the global bus is the seed of an **input bus** — keyboard/controller events normalize into named events (`move:left`, `bomb:place`) which game classes subscribe to. Frame-synced input buffering later wraps this cleanly. (This lives in the separate game project, not this repo.)
 
 ---
 

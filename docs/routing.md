@@ -22,6 +22,9 @@ useRouter([
 - `path` may contain `:param` segments (e.g. `:id`).
 - A route's `view` is a function you provide; the router informs you of changes
   via `onRouteChange`.
+- `useRouter` configures a single, process-wide **default** router. Calling it
+  again replaces the previous one (its URL listener is detached). For more than
+  one router, use `createRouter` (see below).
 
 ---
 
@@ -30,13 +33,18 @@ useRouter([
 ```js
 import { onRouteChange } from "../src/index.js";
 
-onRouteChange(({ path, params }) => {
+onRouteChange(({ path, params, route, matched }) => {
   console.log("now at", path, "with params", params);
   // re-render here
 });
 ```
 
-The callback receives the resolved `path` and any `:param` values.
+The callback receives the resolved `path`, any `:param` values, the matched
+`route` (or `null`), and a `matched` boolean. `onRouteChange` may be called
+before `useRouter`; the callback is applied when the router is created.
+
+For unmatched paths, `useRouter(routes, { notFound: ({ path }) => … })` is
+invoked (and the change callback still fires with `matched: false`).
 
 ---
 
@@ -72,26 +80,54 @@ window.location.hash = "#/about";
 
 ---
 
+## Multiple routers, and teardown
+
+`useRouter` manages one default router. When you need several (for example a UI
+router and a game-menu router), create them explicitly:
+
+```js
+import { createRouter } from "../src/index.js";
+
+const ui = createRouter([{ path: "/", view: home }]);
+const menu = createRouter([{ path: "/menu", view: menuView }], { hash: true });
+
+ui.navigate("/");
+menu.destroy(); // detach the URL listener and stop invoking callbacks
+```
+
+Each router keeps its own routes and listener, so they never clobber each
+other. `createRouter(routes, opts)` accepts `{ hash, notFound, window }`; the
+`window` option (an `EventTarget` with `location`/`history`) is mainly for
+testing.
+
 ## todoMVC usage
 
 The example app registers three routes mapping to the same view but different
-filters:
+filters, and drives the router in **hash mode** to match the `#/active` links in
+`index.html`:
 
 ```js
-useRouter([
+const router = useRouter([
   { path: "/",           view },
   { path: "/active",     view },
   { path: "/completed",  view },
-]);
+], { hash: true });
+
+router.onRouteChange(({ path }) => {
+  app.currentFilter = path === "/active" ? "active"
+    : path === "/completed" ? "completed"
+    : "all";
+  draw();
+});
 ```
 
-The current filter is derived from `window.location.hash`, so `/`,
-`#/active`, and `#/completed` each show the matching list.
-
----
+Navigating (by link or `router.navigate`) changes the hash; the router resolves
+the path and re-derives the filter.
 
 ## Helpers
 
-- `getCurrentRoute()` — returns the current path string.
-- `onRouteChange(cb)` — set the change callback.
-- `navigate(path)` — navigate programmatically.
+- `createRouter(routes, opts)` — create an independent router instance.
+- `useRouter(routes, opts)` — configure the default router.
+- `navigate(path)` / `onRouteChange(cb)` / `getCurrentRoute()` — operate on the
+  default router.
+- `router.destroy()` — detach a router's URL listener.

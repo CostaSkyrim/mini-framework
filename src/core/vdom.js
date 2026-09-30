@@ -12,10 +12,17 @@
 // insertion cheap, which matters both for reactive UIs and for a per-frame game
 // loop (sprite/entity lists).
 
-// Synthetic event handling is delegated through the emitter (see
-// src/events/emitter.js). We keep a registry of live listeners per real node so
-// we can add/remove them safely across patches.
+// Events declared in a vnode's `events` map are attached as *direct* listeners
+// on the real node (not routed through the emitter). We keep a registry of live
+// listeners per real node so we can replace/remove them safely across patches.
+// (The emitter's `delegate()` is a separate, optional utility.)
+import { DEV, warn } from "../diagnostics.js";
+
 const listenerRegistry = new WeakMap(); // realNode -> Map(eventType -> handler)
+
+// Parents we have already warned about, so a bad list is reported once, not on
+// every patch.
+const warnedParents = new WeakSet();
 
 /**
  * Build a real DOM node from a vnode and attach its event listeners.
@@ -32,8 +39,8 @@ export function mount(vnode) {
     setAttribute(el, name, value);
   }
 
-  // Events — delegated through the emitter so that a single `on(type, handler)`
-  // call origin works regardless of how the node was constructed.
+  // Events — attached directly on the node and tracked in the listener
+  // registry so patches can replace or detach them cleanly.
   for (const [type, handler] of Object.entries(vnode.events)) {
     attachListener(el, type, handler);
   }
@@ -42,8 +49,6 @@ export function mount(vnode) {
   for (const child of vnode.children) {
     el.appendChild(mount(child));
   }
-
-  el.__vnode = vnode;
 
   // Invoke onMount after the node and its subtree are in the DOM.
   if (vnode.hooks?.onMount) {
@@ -62,7 +67,7 @@ export function patch(dom, oldVnode, newVnode) {
   if (oldVnode.tag !== newVnode.tag) {
     const el = mount(newVnode);
     dom.parentNode.replaceChild(el, dom);
-    if (oldVnode.hooks?.onUnmount) oldVnode.hooks.onUnmount(dom);
+    unmountTree(oldVnode, dom);
     return el;
   }
 
@@ -81,8 +86,6 @@ export function patch(dom, oldVnode, newVnode) {
 
   // Update children (keyed reconciliation).
   patchChildren(dom, oldVnode.children || [], newVnode.children || []);
-
-  dom.__vnode = newVnode;
 
   // Invoke onUpdate when the vnode was re-rendered in place.
   if (newVnode.hooks?.onUpdate) {
@@ -119,32 +122,20 @@ function patchEvents(el, oldEvents, newEvents) {
 }
 
 function patchChildren(parentEl, oldKids, newKids) {
-  const keyedOld = keyedMap(oldKids);
-  const keyedNew = keyedMap(newKids);
+  if (DEV) warnChildKeys(parentEl, newKids);
 
-  // Fast path: no keys anywhere — diff positionally.
-  if (!keyedOld.hasUnkeyed && !keyedNew.hasUnkeyed) {
-    // handled below via same keyed algorithm; unkeyed just uses index keys
-  }
-
-  // Assign implicit index keys when a child lacks an explicit key. This keeps
-  // a single code path while still stabilizing order.
+  // Match old children to new ones by key. A child without an explicit `key`
+  // falls back to its position ("__index__N"); such children are diffed
+  // positionally, so inserting/deleting in the middle can shift node identity.
   const oldByKey = new Map();
-  const newByKey = new Map();
-
   oldKids.forEach((vnode, i) => {
-    const key = vnode.props?.key ?? ("__index__" + i);
-    oldByKey.set(key, { vnode, index: i });
-  });
-  newKids.forEach((vnode, i) => {
-    const key = vnode.props?.key ?? ("__index__" + i);
-    newByKey.set(key, { vnode, index: i });
+    oldByKey.set(vnode.props?.key ?? ("__index__" + i), { vnode, index: i });
   });
 
-  // Existing real children.
+  // Snapshot the existing real children.
   const domChildren = Array.from(parentEl.childNodes);
 
-  // Build new DOM list by reusing/mounting.
+  // Build the new DOM list by reusing matched nodes and mounting the rest.
   const newDom = new Array(newKids.length);
   const usedOld = new Set();
 
@@ -164,15 +155,15 @@ function patchChildren(parentEl, oldKids, newKids) {
     }
   });
 
-  // Remove old nodes not reused.
+  // Unmount (post-order) and remove old nodes that were not reused.
   oldKids.forEach((oldVnode, i) => {
     if (!usedOld.has(i)) {
-      if (oldVnode.hooks?.onUnmount) oldVnode.hooks.onUnmount(domChildren[i]);
+      unmountTree(oldVnode, domChildren[i]);
       parentEl.removeChild(domChildren[i]);
     }
   });
 
-  // Insert in correct order (append or insertBefore as needed).
+  // Place new nodes in order (append or insertBefore as needed).
   newDom.forEach((dom, i) => {
     const existing = parentEl.childNodes[i];
     if (existing && existing !== dom) {
@@ -184,16 +175,55 @@ function patchChildren(parentEl, oldKids, newKids) {
   });
 }
 
-function keyedMap(kids) {
-  let hasUnkeyed = false;
-  const map = new Map();
-  kids.forEach((k, i) => {
-    const key = k?.props?.key ?? ("__index__" + i);
-    if (!k?.props?.key) hasUnkeyed = true;
-    map.set(key, { vnode: k, index: i });
-  });
-  map.hasUnkeyed = hasUnkeyed;
-  return map;
+/**
+ * Fire `onUnmount` for `vnode` and every descendant, children first (post-order).
+ * `dom` is the real node backing `vnode`; descendants are paired positionally
+ * with `dom.childNodes` (they were mounted in the same order).
+ */
+function unmountTree(vnode, dom) {
+  if (!vnode) return;
+  const children = vnode.children || [];
+  for (let i = 0; i < children.length; i++) {
+    unmountTree(children[i], dom?.childNodes?.[i]);
+  }
+  vnode.hooks?.onUnmount?.(dom);
+}
+
+/**
+ * Developer warning for the two silent footguns of list rendering: mixing
+ * keyed and unkeyed siblings, and duplicate keys. Reported once per parent.
+ */
+function warnChildKeys(parentEl, kids) {
+  if (warnedParents.has(parentEl)) return;
+
+  const keys = kids.map((k) => k?.props?.key);
+  const anyKey = keys.some((k) => k !== undefined);
+  const allKeyed = keys.every((k) => k !== undefined);
+
+  let problem = null;
+  if (anyKey && !allKeyed) {
+    problem = "a mix of keyed and unkeyed children";
+  } else if (allKeyed) {
+    const seen = new Set();
+    const duplicates = new Set();
+    for (const key of keys) {
+      if (seen.has(key)) duplicates.add(key);
+      else seen.add(key);
+    }
+    if (duplicates.size > 0) {
+      problem = `duplicate key(s): ${[...duplicates].join(", ")}`;
+    }
+  }
+
+  if (problem) {
+    warnedParents.add(parentEl);
+    warn(
+      `children of <${(parentEl.tagName || "?").toLowerCase()}> have ${problem}. ` +
+        "Unkeyed children are diffed by position, so node identity (focus, " +
+        "input value) can shift when items are inserted or removed. Give every " +
+        "sibling a stable `key`.",
+    );
+  }
 }
 
 function setAttribute(el, name, value) {
