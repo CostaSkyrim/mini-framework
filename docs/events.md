@@ -95,6 +95,31 @@ off();
 
 ---
 
+## Error reporting (`setErrorHandler`)
+
+User callbacks — event handlers on the bus (`emit`) and store subscribers —
+are invoked defensively. If one throws, the error is routed to a single
+reporter rather than crashing the framework, and the remaining callbacks still
+run.
+
+```js
+import { setErrorHandler } from "../src/index.js";
+
+// Replace the default console.error reporter with your own:
+setErrorHandler((error, context) => {
+  console.log("caught", error, "in", context); // e.g. store subscriber, event "player:score"
+});
+
+// Or silence errors entirely (useful in tests):
+setErrorHandler(null);
+```
+
+Any non-function argument restores the default reporter. The `context` string
+identifies where the failure happened (e.g. `store subscriber` or an event
+name).
+
+---
+
 ## Keyboard input (the seed of the game input layer)
 
 ```js
@@ -106,6 +131,6 @@ on(window, "keydown", (e) => {
 ```
 
 `keyEvent(type, e)` normalizes a raw keyboard event into a framework string
-(`"keydown:ArrowLeft"`, `"keyup: "`). In the planned Bomberman game this is how
-raw input becomes named actions (`move:left`, `bomb:place`) that netcode can
+(`"keydown:ArrowLeft"`, `"keyup:Space"`). In the planned Bomberman game this is
+how raw input becomes named actions (`move:left`, `bomb:place`) that netcode can
 replay frame by frame.

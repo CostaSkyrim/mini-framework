@@ -29,6 +29,15 @@ h("div", {}, "text", 42, null, h("span", {}, "nested"));
 // renders: <div>text42<span>nested</span></div>
 ```
 
+For an explicit text node (rarely needed — `h()` converts strings for you),
+use `text()`:
+
+```js
+import { h, text } from "../src/index.js";
+
+h("p", {}, text("plain text node"));
+```
+
 ---
 
 ## Adding attributes
@@ -118,7 +127,7 @@ owns (timers, subscriptions, attention).
 
 ## Rendering
 
-There are two APIs:
+There are three APIs:
 
 - **Manual** (`mount` / `patch`) — for full control, from `core/vdom.js`.
 - **Renderer factory** (`createRenderer`) — the recommended app-level API:
@@ -136,6 +145,19 @@ render(h("p", {}, "second render")); // diffs, patches in place
 The first `render()` mounts a fresh tree; every later call patches against the
 previous one.
 
+- **Convenience** — the bare `render()` and `mountTo(container, vnode)` exports:
+
+```js
+import { h, render, mountTo } from "../src/index.js";
+
+render(h("p", {}, "straight onto document.body"));
+// — patches against the previous tree, using a lazily-created default
+//   renderer bound to document.body.
+
+mountTo(document.getElementById("app"), h("p", {}, "one-off"));
+// — a fresh mount (not a diff) onto an arbitrary container.
+```
+
 ---
 
 ## Full example
@@ -152,3 +174,23 @@ render(
   ),
 );
 ```
+
+---
+
+## The frame loop (`tick`)
+
+For a continuous simulation (the seed of a game loop), `tick` runs an update
+callback on every animation frame via `requestAnimationFrame`:
+
+```js
+import { tick, stopTick } from "../src/index.js";
+
+const stop = tick((deltaMs) => {
+  // deltaMs = time since the previous frame
+});
+
+stop();        // equivalent to stopTick(); stops the loop
+```
+
+`deltaMs` is the elapsed time since the last frame — use it to advance state
+frame-rate-independently.
